@@ -1,5 +1,5 @@
 import os
-import urllib
+import urllib.request
 import string
 import re
 from datetime import datetime as dt
