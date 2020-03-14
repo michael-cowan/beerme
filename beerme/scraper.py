@@ -313,6 +313,9 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
     print(f'Currently have {len(found_rids)} homebrews in database')
 
+    # create strings to represent progress during batch scrape
+    curr_str = '%0{}i'.format(len(str(max_num)))
+
     # track/limit number of new beers added to data
     added = 0
     for url in scrape_recipe_urls(sortby_rating=sortby_rating):
@@ -323,7 +326,11 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
         if rid in found_rids:
             continue
 
-        print(f'Getting data for {"/".join([rid, name])}')
+        # print details about progress and current beer attempting to scrape
+        bn = "/".join([rid, name])
+        print(f'Getting data for {curr_str % (added + 1)} of {max_num}: {bn}')
+
+        # get BeautifulSoup object of homebrew
         soup = bs_scrape(url)
 
         # if page was successfully loaded, get the homebrew data
@@ -345,10 +352,13 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
     # save database if new homebrews have been added
     if added:
         if save_json:
-            beerme_io.write_json(DBPATH.replace('.pickle', '.json'), all_data)
+            newfname = DBPATH.replace('.pickle', '.json')
+            if beerme_io.write_json(newfname, all_data):
+                print('Saved Beer database json!')
 
+        # always save a pickle of the database
         if beerme_io.write_pickle(DBPATH, all_data):
-            print(f'Saved Beer database to {DBPATH}!')
+            print('Saved Beer database pickle!')
 
 
 if __name__ == '__main__':

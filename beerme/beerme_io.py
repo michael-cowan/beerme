@@ -22,6 +22,7 @@ def read_pickle(path):
 def write_json(path, data, indent=2):
     with open(path, 'w') as fidw:
         json.dump(data, fidw, indent=indent)
+    return True
 
 
 def write_pickle(path, data):
