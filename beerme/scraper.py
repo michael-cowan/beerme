@@ -239,7 +239,16 @@ def parse_brew_data(soup):
     rec_val = recipe[1::2]
 
     # author
-    rec_val.append(soup.find(itemprop='author').text)
+    auth = soup.find(itemprop='author')
+    if auth:
+        auth = auth.text
+    else:
+        auth = soup.find('div', {'class': 'center aligned header'})
+        if auth:
+            auth = auth.text
+        else:
+            auth = None
+    rec_val.append(auth)
 
     # notes
     notes = soup.find('div', {'class': 'ui message'})
