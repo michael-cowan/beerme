@@ -46,7 +46,7 @@ def bs_scrape(url):
     return BeautifulSoup(text, 'html.parser')
 
 
-def scrape_recipe_urls(num_pages=0, sortby_rating=True):
+def scrape_recipe_urls(num_pages=0, sortby_rating=True, start_on=1):
     """
     Generator that scrapes beer recipe urls
 
@@ -56,6 +56,8 @@ def scrape_recipe_urls(num_pages=0, sortby_rating=True):
                      (Default: 0 [no page limit])
     sortby_rating (bool): if true, pages are sorted by beer rating
                           (Default: True)
+    start_on (int): page to start on
+                    (Default: 1)
 
     Returns:
     (str): each generation is a url of a homebrew recipe
@@ -64,7 +66,7 @@ def scrape_recipe_urls(num_pages=0, sortby_rating=True):
     if num_pages <= 0:
         num_pages = 8028
 
-    for page in range(1, min(num_pages + 1, 8028)):
+    for page in range(start_on, min(start_on + num_pages + 1, 8028)):
         # build url for page of recipes
         url = BASEURL + '/homebrew-recipes/page/%i' % page
         if sortby_rating:
@@ -327,16 +329,21 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
     # track/limit number of new beers added to data
     added = 0
-    for url in scrape_recipe_urls(sortby_rating=sortby_rating):
+    for url in scrape_recipe_urls(sortby_rating=sortby_rating,
+                                  start_on=max(1, len(found_rids) // 20 - 1)):
         # get RID # and name of beer from url
         rid, name = url.split('/')[-2:]
 
+        # beer name
+        bn = "/".join([rid, name])
+
         # don't rescrape data of beer already in database
         if rid in found_rids:
+            print(' ' * 100, end='\r')
+            print(f'Already have {bn}', end='\r')
             continue
 
         # print details about progress and current beer attempting to scrape
-        bn = "/".join([rid, name])
         print(f'Getting data for {curr_str % (added + 1)} of {max_num}: {bn}')
 
         # get BeautifulSoup object of homebrew
@@ -355,6 +362,11 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
                 all_data[rid].update(brew)
                 found_rids.add(rid)
                 added += 1
+                # save a pickle of the database every 100 changes
+                if not added % 100 and beerme_io.write_pickle(DBPATH,
+                                                              all_data):
+                    print('Saved Beer database pickle!')
+
                 if added == max_num:
                     break
 
@@ -371,4 +383,4 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
 
 if __name__ == '__main__':
-    batch_scrape(1, sortby_rating=True, save_json=True)
+    batch_scrape(1, sortby_rating=True, save_json=False)
