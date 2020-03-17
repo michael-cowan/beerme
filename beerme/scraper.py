@@ -9,6 +9,8 @@ import beerme_io
 # brewersfriend url
 BASEURL = 'http://www.brewersfriend.com'
 
+RECIPE_BASEURL = BASEURL + '/homebrew/recipe/view'
+
 # directory of homebrew database
 DATADIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        '..',
@@ -16,6 +18,8 @@ DATADIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 # pickle database path
 DBPATH = os.path.join(DATADIR, 'bdb.pickle')
+
+URLDATAPATH = os.path.join(DATADIR, 'beer_urls.csv')
 
 # header used to scrape from brewersfriend
 HDR = {'User-Agent': ' '.join(['Mozilla/5.0',
@@ -46,27 +50,47 @@ def bs_scrape(url):
     return BeautifulSoup(text, 'html.parser')
 
 
-def scrape_recipe_urls(num_pages=0, sortby_rating=True, start_on=1):
+def scrape_recipe_last_page():
+    """
+    Finds the last page of homebrew recipes from:
+    http://www.brewersfriend.com/homebrew-recipes/
+
+    Returns:
+    (int): last page of hombrew recipes
+    """
+    url = BASEURL + '/homebrew-recipes/'
+    soup = bs_scrape(url)
+    page = int(soup.find_all('ul', {'class': 'pagination'})[-1]
+               .li.get_text(strip=True).split(' ')[-1].replace(',', ''))
+    return page
+
+
+def scrape_recipe_urls(num_pages=0, sortby_rating=True, start_on=1,
+                       full_url=True):
     """
     Generator that scrapes beer recipe urls
 
     KArgs:
     num_pages (int): number of pages to scrape (20 beers per page)
-                     if <= 0, no page limit (will scrape all 8028 pages)
+                     if <= 0, no page limit (will scrape all pages)
                      (Default: 0 [no page limit])
     sortby_rating (bool): if true, pages are sorted by beer rating
                           (Default: True)
     start_on (int): page to start on
                     (Default: 1)
+    full_url (bool): if True, return full url
+                     else return unique part of url (RID and beer name)
+                     (Default: True)
 
     Returns:
     (str): each generation is a url of a homebrew recipe
     """
     # total of 8027 pages of beers
     if num_pages <= 0:
-        num_pages = 8028
+        num_pages = 8048
 
-    for page in range(start_on, min(start_on + num_pages + 1, 8028)):
+    last_page = scrape_recipe_last_page()
+    for page in range(start_on, min(start_on + num_pages + 1, last_page + 1)):
         # build url for page of recipes
         url = BASEURL + '/homebrew-recipes/page/%i' % page
         if sortby_rating:
@@ -74,7 +98,28 @@ def scrape_recipe_urls(num_pages=0, sortby_rating=True, start_on=1):
 
         # iteratively yield recipe urls (NOTE: does not include BASEURL)
         for val in bs_scrape(url).find_all('a', {'class': 'recipetitle'}):
-            yield BASEURL + val['href']
+            yield BASEURL + val['href'] if full_url else val['href']
+
+
+def get_recipe_url_data(max_n=-1):
+    """
+    Generator to read recipe data from beer_urls.csv data
+
+    KArgs:
+    max_n (int): max number of beer url data to return
+                 (Default: -1, return all url data)
+
+    Returns:
+    (str): full url to beer recipe
+    """
+    count = 0
+    with open(URLDATAPATH, 'r') as fidr:
+        for line in fidr:
+            rid, name = line.split(',')
+            yield f'{RECIPE_BASEURL}/{rid}/{name}'
+            count += 1
+            if count == max_n:
+                break
 
 
 def clean_brew_details(table, name=''):
@@ -293,6 +338,32 @@ def scrape_a_brew(soup=None, url=None, rid=None):
         return parse_brew_data(soup)
 
 
+def scrape_all_urls():
+    i = 0
+    total = 0
+    write_every = 1000
+    beers = [None] * write_every
+    for url in scrape_recipe_urls(full_url=False):
+        beers[i] = url
+        i += 1
+        print(f'Scraped URL #{total + i}        ', end='\r')
+        if i == write_every:
+            with open(URLDATAPATH, 'a') as fidw:
+                [fidw.write(','.join(b.split('/')[-2:]) + '\n') for b in beers]
+            total += write_every
+            print(f'Writing {write_every} urls to csv.'
+                  f' Current total = {total}')
+            i = 0
+            beers = [None] * write_every
+    else:
+        beers = [b for b in beers if b]
+        with open(URLDATAPATH, 'a') as fidw:
+            [fidw.write(','.join(b.split('/')[-2:]) + '\n') for b in beers]
+        total += len(beers)
+        print(f'Writing {len(beers)} urls to csv.'
+              f' Final total = {total}')
+
+
 def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
     """
     Scrapes multiple homebrew recipes and saves/updates a database
@@ -329,8 +400,7 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
     # track/limit number of new beers added to data
     added = 0
-    for url in scrape_recipe_urls(sortby_rating=sortby_rating,
-                                  start_on=max(1, len(found_rids) // 20 - 1)):
+    for url in get_recipe_url_data():
         # get RID # and name of beer from url
         rid, name = url.split('/')[-2:]
 
@@ -339,8 +409,8 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
         # don't rescrape data of beer already in database
         if rid in found_rids:
-            print(' ' * 100, end='\r')
-            print(f'Already have {bn}', end='\r')
+            # print(' ' * 60, end='\r')
+            # print(f'Already have {bn}', end='\r')
             continue
 
         # print details about progress and current beer attempting to scrape
