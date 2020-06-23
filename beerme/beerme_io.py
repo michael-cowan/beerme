@@ -1,6 +1,11 @@
 import os
 import json
 import pickle
+import beerme.constants as const
+
+
+def load_rawdata(path=const.DBPATH):
+    return read_pickle(path)
 
 
 def read_json(path):
@@ -12,11 +17,11 @@ def read_json(path):
 
 
 def read_pickle(path):
+    p = None
     if os.path.isfile(path):
         with open(path, 'rb') as fidr:
-            return pickle.load(fidr)
-    else:
-        return None
+            p = pickle.load(fidr)
+    return p
 
 
 def write_json(path, data, indent=2):

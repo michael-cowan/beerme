@@ -4,29 +4,8 @@ import string
 import re
 from datetime import datetime as dt
 from bs4 import BeautifulSoup
-import beerme_io
-
-# brewersfriend url
-BASEURL = 'http://www.brewersfriend.com'
-
-RECIPE_BASEURL = BASEURL + '/homebrew/recipe/view'
-
-# directory of homebrew database
-DATADIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       '..',
-                       'data')
-
-# pickle database path
-DBPATH = os.path.join(DATADIR, 'bdb.pickle')
-
-URLDATAPATH = os.path.join(DATADIR, 'beer_urls.csv')
-
-# header used to scrape from brewersfriend
-HDR = {'User-Agent': ' '.join(['Mozilla/5.0',
-                               '(X11; Linux x86_64)',
-                               'AppleWebKit/537.11',
-                               '(KHTML, like Gecko)',
-                               'Chrome/23.0.1271.64 Safari/537.11'])}
+import beerme.beerme_io
+import beerme.constants as const
 
 
 def bs_scrape(url):
@@ -113,9 +92,9 @@ def get_recipe_url_data(max_n=-1):
     (str): full url to beer recipe
     """
     count = 0
-    with open(URLDATAPATH, 'r') as fidr:
+    with open(const.URLDATAPATH, 'r') as fidr:
         for line in fidr:
-            rid, name = line.split(',')
+            rid, name = line.strip('\n').split(',')
             yield f'{RECIPE_BASEURL}/{rid}/{name}'
             count += 1
             if count == max_n:
@@ -348,7 +327,7 @@ def scrape_all_urls():
         i += 1
         print(f'Scraped URL #{total + i}        ', end='\r')
         if i == write_every:
-            with open(URLDATAPATH, 'a') as fidw:
+            with open(const.URLDATAPATH, 'a') as fidw:
                 [fidw.write(','.join(b.split('/')[-2:]) + '\n') for b in beers]
             total += write_every
             print(f'Writing {write_every} urls to csv.'
@@ -357,7 +336,7 @@ def scrape_all_urls():
             beers = [None] * write_every
     else:
         beers = [b for b in beers if b]
-        with open(URLDATAPATH, 'a') as fidw:
+        with open(const.URLDATAPATH, 'a') as fidw:
             [fidw.write(','.join(b.split('/')[-2:]) + '\n') for b in beers]
         total += len(beers)
         print(f'Writing {len(beers)} urls to csv.'
@@ -375,7 +354,7 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
 
     KArgs:
     max_num (int): maximum number of new beers to scrape
-                   if == -1, no limit is given
+                   if max_num == -1, no limit is given
                    (Default: 5)
     sortby_rating (bool): if true, pages are sorted by beer rating
                           (Default: True)
@@ -386,12 +365,16 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
     None
     """
     # get RIDs of beers whose data has already been found
-    all_data = beerme_io.read_pickle(DBPATH)
+    all_data = beerme_io.read_pickle(const.DBPATH)
     if all_data is None:
         all_data = {}
         found_rids = set()
     else:
         found_rids = set(all_data.keys())
+
+    failed_rids = beerme_io.read_pickle(const.FAILPATH)
+    if failed_rids is None:
+        failed_rids = set()
 
     print(f'Currently have {len(found_rids)} homebrews in database')
 
@@ -407,10 +390,14 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
         # beer name
         bn = "/".join([rid, name])
 
+        if bn in failed_rids:
+            print(f'Already failed to find {bn}', end='\r')
+            continue
+
         # don't rescrape data of beer already in database
         if rid in found_rids:
-            # print(' ' * 60, end='\r')
-            # print(f'Already have {bn}', end='\r')
+            print(' ' * 60, end='\r')
+            print(f'Already have {bn}'[:50], end='\r')
             continue
 
         # print details about progress and current beer attempting to scrape
@@ -420,37 +407,48 @@ def batch_scrape(max_num=5, sortby_rating=True, save_json=False):
         soup = bs_scrape(url)
 
         # if page was successfully loaded, get the homebrew data
-        if soup:
-            brew = scrape_a_brew(soup=soup)
+        brew = scrape_a_brew(soup=soup)
 
-            # if homebrew data was successfully loaded and cleaned,
-            # add it to the database
-            if brew:
-                all_data[rid] = {'name': name,
-                                 'url': url,
-                                 'author': brew['recipe'].pop('author')}
-                all_data[rid].update(brew)
-                found_rids.add(rid)
-                added += 1
-                # save a pickle of the database every 100 changes
-                if not added % 100 and beerme_io.write_pickle(DBPATH,
-                                                              all_data):
-                    print('Saved Beer database pickle!')
+        # if not successfully loaded, continue on to next hombrew recipe
+        if not brew:
+            print('Unable to scrape data.')
+            failed_rids.add(bn)
+            continue
 
-                if added == max_num:
-                    break
+        # if homebrew data was successfully loaded and cleaned,
+        # add it to the database
+        all_data[rid] = {'name': name,
+                         'url': url,
+                         'author': brew['recipe'].pop('author')}
+        all_data[rid].update(brew)
+        found_rids.add(rid)
+        added += 1
+        # save a pickle of the database every 100 changes
+        # (except when we have reached the max_num of new recipes)
+        if not added % 100 and added != max_num:
+            if beerme_io.write_pickle(const.DBPATH, all_data):
+                print('Saved Beer database pickle!')
+
+        if added == max_num:
+            break
+
+    # save set of failed brew names
+    beerme_io.write_pickle(const.FAILPATH, failed_rids)
 
     # save database if new homebrews have been added
     if added:
         if save_json:
-            newfname = DBPATH.replace('.pickle', '.json')
+            newfname = const.DBPATH
+            newfname = newfname.replace('.pickle', '.json')
             if beerme_io.write_json(newfname, all_data):
                 print('Saved Beer database json!')
 
         # always save a pickle of the database
-        if beerme_io.write_pickle(DBPATH, all_data):
+        if beerme_io.write_pickle(const.DBPATH, all_data):
             print('Saved Beer database pickle!')
 
 
 if __name__ == '__main__':
-    batch_scrape(1, sortby_rating=True, save_json=False)
+    all_data = beerme_io.read_pickle(const.DBPATH)
+    print(f'Currently have {len(all_data)} recipes in database.')
+    # batch_scrape(500, sortby_rating=True, save_json=False)
