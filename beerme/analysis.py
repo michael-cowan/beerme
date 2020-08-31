@@ -18,12 +18,12 @@ with open(DBPATH, 'rb') as fidr:
     data = pickle.load(fidr)
 
 # read the comments
-for d in data:
-    if len(data[d]['comments']) > 1:
-        print(f"{data[d]['name']}")
-        print(f"{data[d]['recipe']['Style']}")
-        pprint(data[d]['comments'][:6])
-exit()
+# for d in data:
+#     if len(data[d]['comments']) > 1:
+#         print(f"{data[d]['name']}")
+#         print(f"{data[d]['recipe']['Style']}")
+#         pprint(data[d]['comments'][:6])
+# exit()
 
 stats = [data[d]['stats'] for d in data]
 vals = np.array([[s[k] for k in sorted(s)] for s in stats])
