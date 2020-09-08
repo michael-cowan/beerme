@@ -4,7 +4,7 @@ import string
 import re
 from datetime import datetime as dt
 from bs4 import BeautifulSoup
-import beerme.beerme_io
+import beerme.beerme_io as beerme_io
 import beerme.constants as const
 
 
@@ -19,7 +19,7 @@ def bs_scrape(url):
     (BeautifulSoup): bs object of the HTML website
     """
     # create page request
-    req = urllib.request.Request(url, headers=HDR)
+    req = urllib.request.Request(url, headers=const.HDR)
 
     # request page
     site = urllib.request.urlopen(req)
@@ -37,7 +37,7 @@ def scrape_recipe_last_page():
     Returns:
     (int): last page of hombrew recipes
     """
-    url = BASEURL + '/homebrew-recipes/'
+    url = const.BASEURL + '/homebrew-recipes/'
     soup = bs_scrape(url)
     page = int(soup.find_all('ul', {'class': 'pagination'})[-1]
                .li.get_text(strip=True).split(' ')[-1].replace(',', ''))
@@ -71,13 +71,13 @@ def scrape_recipe_urls(num_pages=0, sortby_rating=True, start_on=1,
     last_page = scrape_recipe_last_page()
     for page in range(start_on, min(start_on + num_pages + 1, last_page + 1)):
         # build url for page of recipes
-        url = BASEURL + '/homebrew-recipes/page/%i' % page
+        url = const.BASEURL + '/homebrew-recipes/page/%i' % page
         if sortby_rating:
             url = url + '?sort=rating-desc'
 
         # iteratively yield recipe urls (NOTE: does not include BASEURL)
         for val in bs_scrape(url).find_all('a', {'class': 'recipetitle'}):
-            yield BASEURL + val['href'] if full_url else val['href']
+            yield const.BASEURL + val['href'] if full_url else val['href']
 
 
 def get_recipe_url_data(max_n=-1):
@@ -95,7 +95,7 @@ def get_recipe_url_data(max_n=-1):
     with open(const.URLDATAPATH, 'r') as fidr:
         for line in fidr:
             rid, name = line.strip('\n').split(',')
-            yield f'{RECIPE_BASEURL}/{rid}/{name}'
+            yield f'{const.RECIPE_BASEURL}/{rid}/{name}'
             count += 1
             if count == max_n:
                 break
@@ -307,7 +307,7 @@ def scrape_a_brew(soup=None, url=None, rid=None):
         if url is None:
             if rid is None:
                 raise ValueError("Please pass in url or rid")
-            url = BASEURL + '/homebrew/recipe/view/%i' % rid
+            url = f'{const.BASEURL}/homebrew/recipe/view/{rid}'
 
         soup = bs_scrape(url)
 
